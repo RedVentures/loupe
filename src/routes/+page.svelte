@@ -1,5 +1,5 @@
 <script>
-  import { app, initOutputDir } from '$lib/state.svelte.js';
+  import { app, initOutputDir, clearAll } from '$lib/state.svelte.js';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
@@ -23,7 +23,13 @@
       app.webProperties = event.payload;
     });
 
+    // Rec #7: Clear in-memory image/design data on window close to minimize persistence
+    const handleUnload = () => clearAll();
+    window.addEventListener('beforeunload', handleUnload);
+
     return () => {
+      window.removeEventListener('beforeunload', handleUnload);
+      clearAll();
       unlistenMenu.then(fn => fn());
       unlistenFigmaProps.then(fn => fn());
       unlistenWebProps.then(fn => fn());

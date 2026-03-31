@@ -11,6 +11,12 @@
     "core:window:allow-close",
     "core:webview:default",
     "core:webview:allow-create-webview-window",
-    "opener:default"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://*" },
+        { "url": "http://*" }
+      ]
+    }
   ]
 }

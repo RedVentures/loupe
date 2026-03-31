@@ -46,7 +46,12 @@ fn start_server(app: AppHandle) {
         let router = Router::new()
             .route("/figma", post(handle_figma))
             .route("/capture", post(handle_capture))
-            .layer(CorsLayer::permissive())
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(tower_http::cors::Any)
+                    .allow_methods([axum::http::Method::POST])
+                    .allow_headers([axum::http::header::CONTENT_TYPE]),
+            )
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:7700")
@@ -60,8 +65,15 @@ fn start_server(app: AppHandle) {
 
 // --- Inspector injection script ---
 
+// Bundle modern-screenshot at compile time (pinned npm dep, not CDN)
+const MODERN_SCREENSHOT_BUNDLE: &str = include_str!("modern-screenshot.bundle.js");
+
 fn picker_script() -> String {
-    r#"
+    // Inject the bundled modern-screenshot IIFE first, then the picker
+    let mut script = String::new();
+    script.push_str(MODERN_SCREENSHOT_BUNDLE);
+    script.push('\n');
+    script.push_str(r#"
 (function() {
     if (window.__loupeInspectorActive) return;
     window.__loupeInspectorActive = true;
@@ -315,9 +327,8 @@ fn picker_script() -> String {
         try {
             const targetWin = selectedWin || window;
 
-            // Use modern-screenshot — handles Shadow DOM and modern CSS (oklch, etc.)
-            const mod = await import('https://cdn.jsdelivr.net/npm/modern-screenshot@4.4.39/+esm');
-            const dataUrl = await mod.domToPng(selectedEl, {
+            // modern-screenshot is bundled at compile time (pinned npm dep, not CDN)
+            const dataUrl = await modernScreenshot.domToPng(selectedEl, {
                 scale: 2,
                 backgroundColor: null,
                 style: { margin: '0' },
@@ -364,8 +375,8 @@ fn picker_script() -> String {
         captureBtn.textContent = 'Capture Selected';
     });
 })();
-"#
-    .to_string()
+"#);
+    script
 }
 
 fn deactivate_picker_script() -> &'static str {
@@ -384,6 +395,13 @@ fn deactivate_picker_script() -> &'static str {
 
 #[tauri::command]
 async fn open_browser(app: AppHandle, url: String) -> Result<(), String> {
+    // Rec #6: Restrict to http/https schemes only
+    let parsed: url::Url = url.parse().map_err(|e| format!("{e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => return Err(format!("Blocked URL scheme: {scheme}. Only http and https are allowed.")),
+    }
+
     // Close existing browser window if open
     if let Some(existing) = app.get_webview_window("browse") {
         let _ = existing.close();
@@ -392,7 +410,7 @@ async fn open_browser(app: AppHandle, url: String) -> Result<(), String> {
     tauri::WebviewWindowBuilder::new(
         &app,
         "browse",
-        tauri::WebviewUrl::External(url.parse().map_err(|e| format!("{e}"))?),
+        tauri::WebviewUrl::External(parsed),
     )
     .title("Loupe Browser")
     .inner_size(1200.0, 800.0)

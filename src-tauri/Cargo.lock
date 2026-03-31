@@ -2053,6 +2053,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tokio",
  "tower-http",
+ "url",
 ]
 
 [[package]]
