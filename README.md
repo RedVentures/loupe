@@ -2,17 +2,10 @@
 
 Compare live web components against Figma frames using pixel-level diffing and heatmap visualization. One desktop app, one companion Figma plugin, one repo.
 
-## Download
-
-Grab the latest release for your platform from the [Releases](https://github.com/TitaniumCladStudios/loupe/releases) page:
-
-| Platform | Format |
-|----------|--------|
-| Linux | `.deb`, `.rpm`, `.AppImage` |
-| macOS | `.dmg` |
-| Windows | `.msi`, `.exe` |
-
 ## Run from Source
+
+This version of loupe must only be run from source, not downloaded from any
+other sources.
 
 ### Prerequisites
 
