@@ -68,6 +68,14 @@ export function clearDiff() {
   app.diffResult = null;
 }
 
+export function clearAll() {
+  app.figmaImage = null;
+  app.figmaProperties = null;
+  app.webCapture = null;
+  app.webProperties = null;
+  app.diffResult = null;
+}
+
 export function isTabComplete(index) {
   if (index === 0) return app.figmaImage !== null;
   if (index === 1) return app.webCapture !== null;
