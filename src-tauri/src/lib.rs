@@ -331,7 +331,19 @@ fn picker_script() -> String {
             const dataUrl = await modernScreenshot.domToPng(selectedEl, {
                 scale: 2,
                 backgroundColor: null,
-                style: { margin: '0' },
+                style: { margin: '0', boxShadow: 'none' },
+                onEmbedNode: (cloned) => {
+                    // Strip box-shadow from all descendants after styles have
+                    // been embedded, so shadows don't render at 2× scale.
+                    if (cloned && cloned.style) {
+                        cloned.style.setProperty('box-shadow', 'none', 'important');
+                    }
+                    if (cloned && cloned.querySelectorAll) {
+                        cloned.querySelectorAll('*').forEach((el) => {
+                            if (el.style) el.style.setProperty('box-shadow', 'none', 'important');
+                        });
+                    }
+                },
             });
 
             // Extract computed CSS properties
