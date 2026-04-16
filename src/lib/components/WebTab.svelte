@@ -4,6 +4,12 @@
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
 
+  const VIEWPORTS = {
+    mobile:  { width: 375,  height: 812  },
+    tablet:  { width: 768,  height: 1024 },
+    desktop: { width: 1200, height: 800  },
+  };
+
   let urlInput = $state(app.lastUrl);
   let loading = $state(false);
   let capturing = $state(false);
@@ -21,7 +27,8 @@
     capturing = false;
     try {
       setLastUrl(urlInput.trim());
-      await invoke('open_browser', { url: urlInput.trim() });
+      const vp = VIEWPORTS[app.viewport] || VIEWPORTS.desktop;
+      await invoke('open_browser', { url: urlInput.trim(), width: vp.width, height: vp.height });
       app.browserOpen = true;
     } catch (e) {
       console.error('Failed to open browser:', e);

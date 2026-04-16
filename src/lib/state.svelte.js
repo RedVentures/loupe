@@ -22,6 +22,7 @@ export const app = $state({
   viewMode: 'heatmap',
   overlayOpacity: 0.5,
   browserOpen: false,
+  viewport: 'desktop',
   figmaProperties: null,
   webProperties: null,
 });
