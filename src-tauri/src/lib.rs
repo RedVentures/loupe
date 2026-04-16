@@ -40,12 +40,32 @@ async fn handle_capture(
     StatusCode::OK
 }
 
+#[derive(Deserialize)]
+struct ResizePayload {
+    width: f64,
+    height: f64,
+}
+
+async fn handle_resize(
+    State(state): State<ServerState>,
+    Json(payload): Json<ResizePayload>,
+) -> StatusCode {
+    if let Some(webview) = state.app.get_webview_window("browse") {
+        let _ = webview.set_size(tauri::Size::Logical(tauri::LogicalSize {
+            width: payload.width,
+            height: payload.height,
+        }));
+    }
+    StatusCode::OK
+}
+
 fn start_server(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state = ServerState { app };
         let router = Router::new()
             .route("/figma", post(handle_figma))
             .route("/capture", post(handle_capture))
+            .route("/resize", post(handle_resize))
             .layer(
                 CorsLayer::new()
                     .allow_origin(tower_http::cors::Any)
@@ -131,6 +151,52 @@ fn picker_script() -> String {
         </div>
     `;
     panel.appendChild(header);
+
+    /* ── Viewport switcher ── */
+    const viewports = [
+        { id: 'mobile',  label: 'Mobile',  w: 375,  h: 812  },
+        { id: 'tablet',  label: 'Tablet',  w: 768,  h: 1024 },
+        { id: 'desktop', label: 'Desktop', w: 1200, h: 800  },
+    ];
+    const vpBar = document.createElement('div');
+    vpBar.style.cssText = 'display:flex;gap:2px;padding:4px 12px;background:#181825;border-bottom:1px solid #313244;flex-shrink:0;';
+    let activeVp = 'desktop';
+    const vpBtns = {};
+
+    function updateVpButtons() {
+        for (const v of viewports) {
+            const btn = vpBtns[v.id];
+            if (v.id === activeVp) {
+                btn.style.background = '#6366f1';
+                btn.style.color = '#fff';
+                btn.style.borderColor = '#6366f1';
+            } else {
+                btn.style.background = '#313244';
+                btn.style.color = '#cdd6f4';
+                btn.style.borderColor = '#45475a';
+            }
+        }
+    }
+
+    for (const v of viewports) {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'flex:1;display:flex;align-items:center;justify-content:center;gap:4px;padding:4px 8px;font-size:11px;font-family:system-ui,sans-serif;border:1px solid #45475a;border-radius:4px;cursor:pointer;transition:all 0.1s;';
+        btn.innerHTML = `<span>${v.label}</span><span style="opacity:0.6;font-size:10px;">${v.w}\u00d7${v.h}</span>`;
+        btn.title = `${v.label} (${v.w}\u00d7${v.h})`;
+        btn.addEventListener('click', () => {
+            activeVp = v.id;
+            updateVpButtons();
+            fetch('http://localhost:7700/resize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ width: v.w, height: v.h }),
+            }).catch(() => {});
+        });
+        vpBtns[v.id] = btn;
+        vpBar.appendChild(btn);
+    }
+    updateVpButtons();
+    panel.appendChild(vpBar);
 
     /* tree container */
     const treeWrap = document.createElement('div');
@@ -406,7 +472,7 @@ fn deactivate_picker_script() -> &'static str {
 // --- Tauri Commands ---
 
 #[tauri::command]
-async fn open_browser(app: AppHandle, url: String) -> Result<(), String> {
+async fn open_browser(app: AppHandle, url: String, width: Option<f64>, height: Option<f64>) -> Result<(), String> {
     // Rec #6: Restrict to http/https schemes only
     let parsed: url::Url = url.parse().map_err(|e| format!("{e}"))?;
     match parsed.scheme() {
@@ -419,13 +485,16 @@ async fn open_browser(app: AppHandle, url: String) -> Result<(), String> {
         let _ = existing.close();
     }
 
+    let w = width.unwrap_or(1200.0);
+    let h = height.unwrap_or(800.0);
+
     tauri::WebviewWindowBuilder::new(
         &app,
         "browse",
         tauri::WebviewUrl::External(parsed),
     )
     .title("Loupe Browser")
-    .inner_size(1200.0, 800.0)
+    .inner_size(w, h)
     .build()
     .map_err(|e| format!("{e}"))?;
 
@@ -450,6 +519,17 @@ async fn stop_capture(app: AppHandle) -> Result<(), String> {
         .ok_or("Browser window is not open")?;
     webview
         .eval(deactivate_picker_script())
+        .map_err(|e| format!("{e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn resize_browser(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let webview = app
+        .get_webview_window("browse")
+        .ok_or("Browser window is not open")?;
+    webview
+        .set_size(tauri::Size::Logical(tauri::LogicalSize { width, height }))
         .map_err(|e| format!("{e}"))?;
     Ok(())
 }
@@ -509,6 +589,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_browser,
             close_browser,
+            resize_browser,
             start_capture,
             stop_capture,
             save_image,
