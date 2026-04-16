@@ -6,8 +6,6 @@ on:
       - 'v*'
   workflow_dispatch:
 
-permissions: {}
-
 jobs:
   build:
     permissions:
@@ -18,10 +16,16 @@ jobs:
         include:
           - platform: ubuntu-22.04
             target: linux
+            args: ''
+            rust_targets: ''
           - platform: macos-latest
             target: macos
+            args: '--target aarch64-apple-darwin'
+            rust_targets: aarch64-apple-darwin
           - platform: windows-latest
             target: windows
+            args: ''
+            rust_targets: ''
 
     runs-on: ${{ matrix.platform }}
 
@@ -31,6 +35,8 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          targets: ${{ matrix.rust_targets }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
@@ -69,3 +75,4 @@ jobs:
           releaseBody: 'See the assets below to download for your platform.'
           releaseDraft: true
           prerelease: false
+          args: ${{ matrix.args }}
