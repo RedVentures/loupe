@@ -2,7 +2,7 @@
   "name": "Loupe",
   "id": "1616846978663270818",
   "api": "1.0.0",
-  "editorType": ["dev"],
+  "editorType": ["dev", "figma"],
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": ["http://localhost:7700"],
