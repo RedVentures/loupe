@@ -2,7 +2,7 @@ if (figma.command === 'send') {
   figma.showUI(__html__, { width: 320, height: 240 });
 }
 
-function extractProperties(node) {
+function extractNodeProps(node) {
   const props = {};
 
   // Dimensions
@@ -27,52 +27,31 @@ function extractProperties(node) {
   // Detect if this is a text node
   props.isText = node.type === 'TEXT';
 
-  // Typography — extract from this node if TEXT, or from the first child TEXT node
-  var textNode = null;
+  // Typography (only on this node if it's TEXT)
   if (node.type === 'TEXT') {
-    textNode = node;
-  } else if ('findOne' in node) {
-    textNode = node.findOne(function(n) { return n.type === 'TEXT'; });
-  }
-
-  if (textNode) {
-    props.fontSize = textNode.fontSize === figma.mixed ? 'mixed' : textNode.fontSize;
-
-    if (textNode.fontName === figma.mixed) {
+    props.fontSize = node.fontSize === figma.mixed ? 'mixed' : node.fontSize;
+    if (node.fontName === figma.mixed) {
       props.fontFamily = 'mixed';
       props.fontStyle = 'mixed';
-    } else if (textNode.fontName) {
-      props.fontFamily = textNode.fontName.family;
-      props.fontStyle = textNode.fontName.style;
+    } else if (node.fontName) {
+      props.fontFamily = node.fontName.family;
+      props.fontStyle = node.fontName.style;
     }
-
-    if (textNode.lineHeight === figma.mixed) {
+    if (node.lineHeight === figma.mixed) {
       props.lineHeight = 'mixed';
-    } else if (textNode.lineHeight) {
-      props.lineHeight = textNode.lineHeight;
+    } else if (node.lineHeight) {
+      props.lineHeight = node.lineHeight;
     }
-
-    if (textNode.letterSpacing === figma.mixed) {
+    if (node.letterSpacing === figma.mixed) {
       props.letterSpacing = 'mixed';
-    } else if (textNode.letterSpacing) {
-      props.letterSpacing = textNode.letterSpacing;
+    } else if (node.letterSpacing) {
+      props.letterSpacing = node.letterSpacing;
     }
-
-    if (textNode.textAlignHorizontal) {
-      props.textAlign = textNode.textAlignHorizontal;
+    if (node.textAlignHorizontal) {
+      props.textAlign = node.textAlignHorizontal;
     }
-
-    // If we pulled typography from a child, also grab its fill as text color
-    if (textNode !== node && 'fills' in textNode && textNode.fills !== figma.mixed) {
-      var textFill = textNode.fills.filter(function(f) { return f.type === 'SOLID' && f.visible !== false; })[0];
-      if (textFill) {
-        props.textColor = {
-          r: textFill.color.r,
-          g: textFill.color.g,
-          b: textFill.color.b,
-          opacity: (textFill.opacity != null ? textFill.opacity : 1)
-        };
-      }
+    if (node.characters) {
+      props.textContent = node.characters;
     }
   }
 
@@ -93,7 +72,6 @@ function extractProperties(node) {
   // Corner radius
   if ('cornerRadius' in node) {
     if (node.cornerRadius === figma.mixed) {
-      // Individual corners
       props.cornerRadii = [
         (node.topLeftRadius || 0),
         (node.topRightRadius || 0),
@@ -132,6 +110,77 @@ function extractProperties(node) {
   return props;
 }
 
+function extractTree(node, rootX, rootY, maxDepth) {
+  if (maxDepth <= 0) return null;
+  if (node.visible === false) return null;
+
+  var ax = node.absoluteTransform
+    ? node.absoluteTransform[0][2]
+    : (node.x || 0);
+  var ay = node.absoluteTransform
+    ? node.absoluteTransform[1][2]
+    : (node.y || 0);
+
+  var treeNode = {
+    type: node.type,
+    name: node.name,
+    bbox: {
+      x: Math.round(ax - rootX),
+      y: Math.round(ay - rootY),
+      width: Math.round(node.width),
+      height: Math.round(node.height),
+    },
+    props: extractNodeProps(node),
+    children: [],
+  };
+
+  if ('children' in node) {
+    for (var i = 0; i < node.children.length; i++) {
+      var child = extractTree(node.children[i], rootX, rootY, maxDepth - 1);
+      if (child) treeNode.children.push(child);
+    }
+  }
+
+  return treeNode;
+}
+
+// Legacy flat extraction for backward compat
+function extractProperties(node) {
+  var props = extractNodeProps(node);
+
+  // Also pull typography from first child text node (legacy behavior)
+  if (node.type !== 'TEXT' && 'findOne' in node) {
+    var textNode = node.findOne(function(n) { return n.type === 'TEXT'; });
+    if (textNode) {
+      props.fontSize = textNode.fontSize === figma.mixed ? 'mixed' : textNode.fontSize;
+      if (textNode.fontName === figma.mixed) {
+        props.fontFamily = 'mixed';
+        props.fontStyle = 'mixed';
+      } else if (textNode.fontName) {
+        props.fontFamily = textNode.fontName.family;
+        props.fontStyle = textNode.fontName.style;
+      }
+      if (textNode.lineHeight === figma.mixed) props.lineHeight = 'mixed';
+      else if (textNode.lineHeight) props.lineHeight = textNode.lineHeight;
+      if (textNode.letterSpacing === figma.mixed) props.letterSpacing = 'mixed';
+      else if (textNode.letterSpacing) props.letterSpacing = textNode.letterSpacing;
+      if (textNode.textAlignHorizontal) props.textAlign = textNode.textAlignHorizontal;
+
+      if ('fills' in textNode && textNode.fills !== figma.mixed) {
+        var textFill = textNode.fills.filter(function(f) { return f.type === 'SOLID' && f.visible !== false; })[0];
+        if (textFill) {
+          props.textColor = {
+            r: textFill.color.r, g: textFill.color.g, b: textFill.color.b,
+            opacity: (textFill.opacity != null ? textFill.opacity : 1)
+          };
+        }
+      }
+    }
+  }
+
+  return props;
+}
+
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'send-to-loupe') {
     const selection = figma.currentPage.selection;
@@ -153,11 +202,17 @@ figma.ui.onmessage = async (msg) => {
 
       const properties = extractProperties(node);
 
+      // Recursive tree for tree-level comparison (max 10 depth)
+      var rootX = node.absoluteTransform ? node.absoluteTransform[0][2] : 0;
+      var rootY = node.absoluteTransform ? node.absoluteTransform[1][2] : 0;
+      const nodeTree = extractTree(node, rootX, rootY, 10);
+
       figma.ui.postMessage({
         type: 'exported',
         data: Array.from(bytes),
         name: node.name,
         properties,
+        nodeTree,
       });
     } catch (err) {
       figma.ui.postMessage({ type: 'error', message: err.toString() });

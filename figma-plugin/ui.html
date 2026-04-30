@@ -89,6 +89,7 @@
         try {
           const body = { image: 'data:image/png;base64,' + base64 };
           if (msg.properties) body.properties = msg.properties;
+          if (msg.nodeTree) body.properties = Object.assign(body.properties || {}, { __nodeTree: msg.nodeTree });
 
           const resp = await fetch('http://localhost:7700/figma', {
             method: 'POST',

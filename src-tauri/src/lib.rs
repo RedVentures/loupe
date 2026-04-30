@@ -412,7 +412,7 @@ fn picker_script() -> String {
                 },
             });
 
-            // Extract computed CSS properties
+            // Extract computed CSS properties (flat, for legacy inspect)
             const cs = targetWin.getComputedStyle(selectedEl);
             const properties = {
                 'width': cs.width, 'height': cs.height,
@@ -432,6 +432,60 @@ fn picker_script() -> String {
                 'gap': cs.gap, 'row-gap': cs.rowGap, 'column-gap': cs.columnGap,
                 'box-shadow': cs.boxShadow, 'filter': cs.filter,
             };
+
+            // Recursive DOM tree extraction
+            function extractElProps(el, win) {
+                const s = win.getComputedStyle(el);
+                return {
+                    'width': s.width, 'height': s.height,
+                    'font-family': s.fontFamily, 'font-size': s.fontSize,
+                    'font-weight': s.fontWeight, 'line-height': s.lineHeight,
+                    'letter-spacing': s.letterSpacing, 'text-align': s.textAlign,
+                    'color': s.color, 'background-color': s.backgroundColor,
+                    'opacity': s.opacity,
+                    'border-top-width': s.borderTopWidth, 'border-right-width': s.borderRightWidth,
+                    'border-bottom-width': s.borderBottomWidth, 'border-left-width': s.borderLeftWidth,
+                    'border-top-color': s.borderTopColor, 'border-right-color': s.borderRightColor,
+                    'border-bottom-color': s.borderBottomColor, 'border-left-color': s.borderLeftColor,
+                    'border-top-left-radius': s.borderTopLeftRadius, 'border-top-right-radius': s.borderTopRightRadius,
+                    'border-bottom-right-radius': s.borderBottomRightRadius, 'border-bottom-left-radius': s.borderBottomLeftRadius,
+                    'padding-top': s.paddingTop, 'padding-right': s.paddingRight,
+                    'padding-bottom': s.paddingBottom, 'padding-left': s.paddingLeft,
+                    'gap': s.gap, 'row-gap': s.rowGap, 'column-gap': s.columnGap,
+                    'box-shadow': s.boxShadow, 'filter': s.filter,
+                };
+            }
+
+            function extractDomTree(el, rootRect, win, depth) {
+                if (depth <= 0) return null;
+                const r = el.getBoundingClientRect();
+                const tag = el.tagName.toLowerCase();
+                const isLeafText = el.children.length === 0 && el.textContent.trim().length > 0;
+                const node = {
+                    type: tag,
+                    name: tag + (el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''),
+                    bbox: {
+                        x: Math.round(r.left - rootRect.left),
+                        y: Math.round(r.top - rootRect.top),
+                        width: Math.round(r.width),
+                        height: Math.round(r.height),
+                    },
+                    props: extractElProps(el, win),
+                    children: [],
+                };
+                if (isLeafText) node.textContent = el.textContent.trim();
+                for (let i = 0; i < el.children.length; i++) {
+                    const child = el.children[i];
+                    if (child.offsetParent === null && win.getComputedStyle(child).position !== 'fixed') continue;
+                    const cn = extractDomTree(child, rootRect, win, depth - 1);
+                    if (cn) node.children.push(cn);
+                }
+                return node;
+            }
+
+            const rootRect = selectedEl.getBoundingClientRect();
+            const domTree = extractDomTree(selectedEl, rootRect, targetWin, 10);
+            properties.__domTree = domTree;
 
             const resp = await fetch('http://localhost:7700/capture', {
                 method: 'POST',
