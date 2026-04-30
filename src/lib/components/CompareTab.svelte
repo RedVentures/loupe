@@ -1,9 +1,33 @@
 <script>
   import { app, setOutputDir } from '$lib/state.svelte.js';
-  import { runDiff } from '$lib/diff.js';
+  import { runDiff, applyCrop } from '$lib/diff.js';
+  import CropModal from './CropModal.svelte';
 
   let running = $state(false);
   let error = $state(null);
+  let cropTarget = $state(null);
+  let figmaPreview = $state(null);
+  let webPreview = $state(null);
+
+  $effect(() => {
+    const src = app.figmaImage;
+    const crop = app.figmaCrop;
+    if (src && crop) {
+      applyCrop(src, crop).then(url => figmaPreview = url);
+    } else {
+      figmaPreview = null;
+    }
+  });
+
+  $effect(() => {
+    const src = app.webCapture;
+    const crop = app.webCrop;
+    if (src && crop) {
+      applyCrop(src, crop).then(url => webPreview = url);
+    } else {
+      webPreview = null;
+    }
+  });
 
   const canRun = $derived(app.figmaImage && app.webCapture && !running);
   const missingMessage = $derived(
@@ -17,7 +41,7 @@
     running = true;
     error = null;
     try {
-      app.diffResult = await runDiff(app.figmaImage, app.webCapture, app.threshold);
+      app.diffResult = await runDiff(app.figmaImage, app.webCapture, app.threshold, app.figmaCrop, app.webCrop);
       app.activeTab = 3;
     } catch (e) {
       error = e.message || 'Comparison failed';
@@ -33,8 +57,11 @@
       <span class="thumb-label">Figma</span>
       {#if app.figmaImage}
         <div class="thumb-img">
-          <img src={app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`} alt="Figma" />
+          <img src={figmaPreview || (app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`)} alt="Figma" />
         </div>
+        <button class="btn-crop" onclick={() => cropTarget = 'figma'} title="Crop the Figma image to remove box-shadow whitespace">
+          {app.figmaCrop ? 'Re-crop' : 'Crop'}
+        </button>
       {:else}
         <div class="thumb-empty">No image</div>
       {/if}
@@ -43,8 +70,11 @@
       <span class="thumb-label">Web</span>
       {#if app.webCapture}
         <div class="thumb-img">
-          <img src={app.webCapture} alt="Web" />
+          <img src={webPreview || app.webCapture} alt="Web" />
         </div>
+        <button class="btn-crop" onclick={() => cropTarget = 'web'} title="Crop the web capture">
+          {app.webCrop ? 'Re-crop' : 'Crop'}
+        </button>
       {:else}
         <div class="thumb-empty">No image</div>
       {/if}
@@ -88,6 +118,20 @@
     {running ? 'Comparing...' : 'Run Comparison'}
   </button>
 </div>
+
+{#if cropTarget}
+  <CropModal
+    image={cropTarget === 'figma'
+      ? (app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`)
+      : app.webCapture}
+    onApply={(pixels) => {
+      if (cropTarget === 'figma') app.figmaCrop = pixels;
+      else app.webCrop = pixels;
+      cropTarget = null;
+    }}
+    onCancel={() => cropTarget = null}
+  />
+{/if}
 
 <style>
   .compare-tab {
@@ -263,6 +307,25 @@
     margin: 0 0 12px;
   }
 
+  .btn-crop {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    align-self: flex-start;
+    margin-top: 4px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .btn-crop:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
   @media (prefers-color-scheme: dark) {
     .tab-desc { color: #9ca3af; }
     .thumb-label { color: #9ca3af; }
@@ -273,5 +336,7 @@
     .text-input { background: #1f2937; border-color: #4b5563; color: #f9fafb; }
     .result-preview { background: #052e16; }
     .similarity { color: #4ade80; }
+    .btn-crop { background: #1f2937; border-color: #4b5563; color: #9ca3af; }
+    .btn-crop:hover { background: #374151; }
   }
 </style>

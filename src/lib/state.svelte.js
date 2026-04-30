@@ -25,6 +25,8 @@ export const app = $state({
   viewport: 'desktop',
   figmaProperties: null,
   webProperties: null,
+  figmaCrop: null,
+  webCrop: null,
 });
 
 export async function initOutputDir() {
@@ -58,11 +60,13 @@ export function setOutputDir(dir) {
 export function clearFigma() {
   app.figmaImage = null;
   app.figmaProperties = null;
+  app.figmaCrop = null;
 }
 
 export function clearWebCapture() {
   app.webCapture = null;
   app.webProperties = null;
+  app.webCrop = null;
 }
 
 export function clearDiff() {
@@ -75,6 +79,8 @@ export function clearAll() {
   app.webCapture = null;
   app.webProperties = null;
   app.diffResult = null;
+  app.figmaCrop = null;
+  app.webCrop = null;
 }
 
 export function isTabComplete(index) {

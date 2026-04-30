@@ -1,9 +1,36 @@
 <script>
   import { app } from '$lib/state.svelte.js';
+  import { applyCrop } from '$lib/diff.js';
   import { invoke } from '@tauri-apps/api/core';
 
   let saving = $state(false);
   let saveMessage = $state('');
+  let croppedFigma = $state(null);
+  let croppedWeb = $state(null);
+
+  const figmaSrc = $derived(
+    app.figmaImage ? (app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`) : null
+  );
+
+  $effect(() => {
+    const src = app.figmaImage;
+    const crop = app.figmaCrop;
+    if (src && crop) {
+      applyCrop(src, crop).then(url => croppedFigma = url);
+    } else {
+      croppedFigma = null;
+    }
+  });
+
+  $effect(() => {
+    const src = app.webCapture;
+    const crop = app.webCrop;
+    if (src && crop) {
+      applyCrop(src, crop).then(url => croppedWeb = url);
+    } else {
+      croppedWeb = null;
+    }
+  });
 
   async function handleDownload() {
     if (!app.diffResult) return;
@@ -60,20 +87,20 @@
           <div class="side-by-side">
             <div class="side">
               <span class="side-label">Web</span>
-              <img src={app.webCapture} alt="Web capture" />
+              <img src={croppedWeb || app.webCapture} alt="Web capture" />
             </div>
             <div class="side">
               <span class="side-label">Figma</span>
-              <img src={app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`} alt="Figma frame" />
+              <img src={croppedFigma || figmaSrc} alt="Figma frame" />
             </div>
           </div>
         {:else if app.viewMode === 'overlay'}
           <div class="overlay-view">
             <div class="overlay-container">
-              <img class="overlay-base" src={app.webCapture} alt="Web capture" />
+              <img class="overlay-base" src={croppedWeb || app.webCapture} alt="Web capture" />
               <img
                 class="overlay-top"
-                src={app.figmaImage.startsWith('data:') ? app.figmaImage : `data:image/png;base64,${app.figmaImage}`}
+                src={croppedFigma || figmaSrc}
                 alt="Figma frame"
                 style="opacity: {app.overlayOpacity}"
               />

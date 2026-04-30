@@ -51,9 +51,38 @@ function trimWhitespace(img) {
   return trimmed;
 }
 
-export async function runDiff(figmaBase64, webBase64, thresholdPercent) {
-  const figmaImg = trimWhitespace(await loadImage(figmaBase64));
-  const webImg = trimWhitespace(await loadImage(webBase64));
+function cropImage(img, crop) {
+  if (!crop) return img;
+  const { x, y, width, height } = crop;
+  if (width <= 0 || height <= 0) return img;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext('2d').drawImage(
+    img,
+    x, y, width, height,
+    0, 0, width, height
+  );
+  return canvas;
+}
+
+export async function applyCrop(src, crop) {
+  const img = await loadImage(src);
+  const cropped = cropImage(img, crop);
+  if (cropped instanceof HTMLCanvasElement) return cropped.toDataURL('image/png');
+  const c = document.createElement('canvas');
+  c.width = cropped.width;
+  c.height = cropped.height;
+  c.getContext('2d').drawImage(cropped, 0, 0);
+  return c.toDataURL('image/png');
+}
+
+export async function runDiff(figmaBase64, webBase64, thresholdPercent, figmaCrop, webCrop) {
+  const figmaRaw = await loadImage(figmaBase64);
+  const figmaImg = figmaCrop ? cropImage(figmaRaw, figmaCrop) : trimWhitespace(figmaRaw);
+  const webRaw = await loadImage(webBase64);
+  const webImg = webCrop ? cropImage(webRaw, webCrop) : trimWhitespace(webRaw);
 
   // Use the Figma frame as the target size (source of truth)
   const targetWidth = figmaImg.width;
