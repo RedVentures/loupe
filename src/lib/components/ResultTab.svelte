@@ -97,9 +97,9 @@
         {:else if app.viewMode === 'overlay'}
           <div class="overlay-view">
             <div class="overlay-container">
-              <img class="overlay-base" src={croppedWeb || app.webCapture} alt="Web capture" />
+              <img class="overlay-layer" src={croppedWeb || app.webCapture} alt="Web capture" />
               <img
-                class="overlay-top"
+                class="overlay-layer"
                 src={croppedFigma || figmaSrc}
                 alt="Figma frame"
                 style="opacity: {app.overlayOpacity}"
@@ -286,22 +286,16 @@
   }
 
   .overlay-container {
-    position: relative;
-    display: inline-block;
+    display: grid;
+    justify-items: start;
+    align-items: start;
   }
 
-  .overlay-base {
+  .overlay-layer {
+    grid-area: 1 / 1;
     display: block;
     max-width: 100%;
-  }
-
-  .overlay-top {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
+    height: auto;
   }
 
   .opacity-control {

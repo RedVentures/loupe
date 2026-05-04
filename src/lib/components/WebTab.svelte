@@ -4,11 +4,20 @@
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
 
-  const VIEWPORTS = {
+  const PRESETS = {
     mobile:  { width: 375,  height: 812  },
     tablet:  { width: 768,  height: 1024 },
     desktop: { width: 1200, height: 800  },
   };
+
+  let customW = $state(1440);
+  let customH = $state(900);
+
+  const activeViewport = $derived(
+    app.viewport === 'custom'
+      ? { width: customW, height: customH }
+      : PRESETS[app.viewport] || PRESETS.desktop
+  );
 
   let urlInput = $state(app.lastUrl);
   let loading = $state(false);
@@ -27,7 +36,7 @@
     capturing = false;
     try {
       setLastUrl(urlInput.trim());
-      const vp = VIEWPORTS[app.viewport] || VIEWPORTS.desktop;
+      const vp = activeViewport;
       await invoke('open_browser', { url: urlInput.trim(), width: vp.width, height: vp.height });
       app.browserOpen = true;
     } catch (e) {
@@ -95,6 +104,41 @@
       {loading ? 'Opening...' : app.browserOpen ? 'Reload' : 'Open Browser'}
     </button>
   </div>
+
+  <div class="viewport-bar">
+    <span class="viewport-label">Viewport</span>
+    <div class="viewport-presets">
+      {#each Object.entries(PRESETS) as [key, vp]}
+        <button
+          class="vp-btn"
+          class:vp-active={app.viewport === key}
+          onclick={() => app.viewport = key}
+          title="{vp.width} × {vp.height}"
+        >
+          {key.charAt(0).toUpperCase() + key.slice(1)}
+        </button>
+      {/each}
+      <button
+        class="vp-btn"
+        class:vp-active={app.viewport === 'custom'}
+        onclick={() => app.viewport = 'custom'}
+        title="Set a custom viewport size"
+      >
+        Custom
+      </button>
+    </div>
+    {#if app.viewport === 'custom'}
+      <div class="viewport-custom">
+        <input type="number" class="vp-input" bind:value={customW} min="320" max="3840" title="Width in pixels" />
+        <span class="vp-x">&times;</span>
+        <input type="number" class="vp-input" bind:value={customH} min="320" max="2160" title="Height in pixels" />
+        <span class="vp-unit">px</span>
+      </div>
+    {:else}
+      <span class="viewport-dims">{activeViewport.width} &times; {activeViewport.height}px</span>
+    {/if}
+  </div>
+
   <p class="tab-desc">Open a browser window, navigate to your component, then capture an element.</p>
 
   <div class="content">
@@ -349,6 +393,100 @@
     margin: 0 0 12px;
   }
 
+  /* Viewport bar */
+  .viewport-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+
+  .viewport-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .viewport-presets {
+    display: flex;
+    gap: 4px;
+  }
+
+  .vp-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+  }
+
+  .vp-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .vp-btn.vp-active {
+    background: #6366f1;
+    color: #fff;
+    border-color: #6366f1;
+  }
+
+  .viewport-dims {
+    font-size: 13px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    color: #374151;
+    background: #f3f4f6;
+    padding: 3px 8px;
+    border-radius: 4px;
+  }
+
+  .viewport-custom {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .vp-input {
+    width: 64px;
+    padding: 3px 6px;
+    font-size: 13px;
+    font-family: 'SF Mono', Monaco, Consolas, monospace;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background: #fff;
+    color: #374151;
+    text-align: center;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+
+  .vp-input::-webkit-inner-spin-button,
+  .vp-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .vp-input:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+  }
+
+  .vp-x {
+    font-size: 13px;
+    color: #9ca3af;
+  }
+
+  .vp-unit {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+
   @media (prefers-color-scheme: dark) {
     .tab-desc { color: #9ca3af; }
     .url-input { background: #1f2937; border-color: #4b5563; color: #f9fafb; }
@@ -362,5 +500,12 @@
     .btn-clear { background: #1f2937; border-color: #4b5563; color: #9ca3af; }
     .btn-clear:hover { background: #374151; }
     .preview-image { background: #111827; border-color: #374151; }
+    .viewport-label { color: #9ca3af; }
+    .vp-btn { background: #374151; border-color: #4b5563; color: #9ca3af; }
+    .vp-btn:hover { background: #4b5563; }
+    .vp-btn.vp-active { background: #6366f1; color: #fff; border-color: #6366f1; }
+    .viewport-dims { background: #1f2937; color: #d1d5db; }
+    .vp-input { background: #1f2937; border-color: #4b5563; color: #d1d5db; }
+    .vp-input:focus { border-color: #6366f1; }
   }
 </style>

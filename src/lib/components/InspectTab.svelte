@@ -3,7 +3,7 @@
   import { runChecklist } from '$lib/checklist.js';
 
   const checks = $derived(runChecklist(app.figmaProperties, app.webProperties));
-  const passed = $derived(checks ? checks.filter(c => c.pass).length : 0);
+  const passed = $derived(checks ? checks.filter(c => !c.skip && c.pass).length : 0);
   const applicable = $derived(checks ? checks.filter(c => !c.skip).length : 0);
 
   let copyMsg = $state('');
