@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
 
+  /** @type {Record<string, { width: number, height: number }>} */
   const PRESETS = {
     mobile:  { width: 375,  height: 812  },
     tablet:  { width: 768,  height: 1024 },
@@ -73,8 +74,53 @@
     clearWebCapture();
   }
 
+  /** @param {KeyboardEvent} e */
   function handleKeydown(e) {
     if (e.key === 'Enter') handleOpen();
+  }
+
+  /** @type {HTMLInputElement} */
+  let fileInput;
+  let dragging = $state(false);
+
+  function handleUploadClick() {
+    fileInput?.click();
+  }
+
+  /** @param {File} file */
+  function loadImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      app.webCapture = /** @type {string} */ (e.target?.result);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /** @param {Event} e */
+  function handleFileChange(e) {
+    const input = /** @type {HTMLInputElement} */ (e.target);
+    const file = input.files?.[0];
+    if (file) loadImageFile(file);
+    input.value = '';
+  }
+
+  /** @param {DragEvent} e */
+  function handleDrop(e) {
+    e.preventDefault();
+    dragging = false;
+    const file = e.dataTransfer?.files?.[0];
+    if (file) loadImageFile(file);
+  }
+
+  /** @param {DragEvent} e */
+  function handleDragOver(e) {
+    e.preventDefault();
+    dragging = true;
+  }
+
+  function handleDragLeave() {
+    dragging = false;
   }
 </script>
 
@@ -141,7 +187,16 @@
 
   <p class="tab-desc">Open a browser window, navigate to your component, then capture an element.</p>
 
-  <div class="content">
+  <input type="file" accept="image/*" bind:this={fileInput} onchange={handleFileChange} class="hidden-file-input" />
+
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="content"
+    class:drag-over={dragging && !app.webCapture}
+    ondrop={handleDrop}
+    ondragover={handleDragOver}
+    ondragleave={handleDragLeave}
+  >
     {#if !app.webCapture}
       <div class="empty-state">
         <div class="icon">
@@ -168,6 +223,19 @@
             Waiting for capture...
           </div>
         {/if}
+        <div class="upload-divider">
+          <span class="divider-line"></span>
+          <span class="divider-text">or</span>
+          <span class="divider-line"></span>
+        </div>
+        <button class="btn btn-upload" onclick={handleUploadClick} title="Upload a screenshot taken from any browser">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 1v10M4 5l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 11v2a2 2 0 002 2h8a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Upload Screenshot
+        </button>
+        <p class="upload-hint">or drag & drop an image here</p>
       </div>
     {:else}
       <div class="preview">
@@ -273,12 +341,24 @@
     50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0); }
   }
 
+  .hidden-file-input {
+    display: none;
+  }
+
   .content {
     flex: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    transition: background 0.15s;
+  }
+
+  .content.drag-over {
+    background: rgba(99, 102, 241, 0.06);
+    border-radius: 12px;
+    outline: 2px dashed #6366f1;
+    outline-offset: -4px;
   }
 
   .empty-state {
@@ -303,6 +383,52 @@
     margin: 0 0 20px;
     max-width: 420px;
     line-height: 1.5;
+  }
+
+  .upload-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 200px;
+    margin: 4px auto 16px;
+  }
+
+  .divider-line {
+    flex: 1;
+    height: 1px;
+    background: #d1d5db;
+  }
+
+  .divider-text {
+    font-size: 12px;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .btn-upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background: #fff;
+    color: #374151;
+    cursor: pointer;
+  }
+
+  .btn-upload:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .upload-hint {
+    font-size: 12px;
+    color: #9ca3af;
+    margin: 8px 0 0;
   }
 
   .status {
@@ -489,6 +615,10 @@
 
   @media (prefers-color-scheme: dark) {
     .tab-desc { color: #9ca3af; }
+    .divider-line { background: #4b5563; }
+    .btn-upload { background: #374151; border-color: #4b5563; color: #d1d5db; }
+    .btn-upload:hover { background: #4b5563; }
+    .content.drag-over { background: rgba(99, 102, 241, 0.1); }
     .url-input { background: #1f2937; border-color: #4b5563; color: #f9fafb; }
     .url-input:focus { border-color: #6366f1; }
     .btn-secondary { background: #374151; border-color: #4b5563; color: #d1d5db; }
