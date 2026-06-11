@@ -1,14 +1,17 @@
+/** @param {string} key @param {string} fallback */
 function loadStored(key, fallback) {
   if (typeof localStorage === 'undefined') return fallback;
   return localStorage.getItem(`loupe_${key}`) ?? fallback;
 }
 
+/** @param {string} key @param {string} value */
 function store(key, value) {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`loupe_${key}`, value);
   }
 }
 
+/** @type {{ activeTab: number, figmaImage: string | null, webCapture: string | null, diffResult: string | null, threshold: number, outputDir: string, outputDirInitialized: boolean, outputFilename: string, lastUrl: string, viewMode: string, overlayOpacity: number, browserOpen: boolean, viewport: string, figmaProperties: any, webProperties: any, figmaCrop: any, webCrop: any }} */
 export const app = $state({
   activeTab: 0,
   figmaImage: null,
@@ -47,11 +50,13 @@ export async function initOutputDir() {
   }
 }
 
+/** @param {string} url */
 export function setLastUrl(url) {
   app.lastUrl = url;
   store('lastUrl', url);
 }
 
+/** @param {string} dir */
 export function setOutputDir(dir) {
   app.outputDir = dir;
   store('outputDir', dir);
@@ -83,6 +88,7 @@ export function clearAll() {
   app.webCrop = null;
 }
 
+/** @param {number} index */
 export function isTabComplete(index) {
   if (index === 0) return app.figmaImage !== null;
   if (index === 1) return app.webCapture !== null;

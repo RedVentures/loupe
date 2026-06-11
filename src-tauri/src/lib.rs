@@ -662,6 +662,16 @@ pub fn run() {
                 .quit()
                 .build()?;
 
+            let edit_menu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
+
             let github_readme = MenuItemBuilder::with_id("github_readme", "Loupe on GitHub")
                 .build(app)?;
             let help_menu = SubmenuBuilder::new(app, "Help")
@@ -670,6 +680,7 @@ pub fn run() {
 
             let menu = MenuBuilder::new(app)
                 .item(&file_menu)
+                .item(&edit_menu)
                 .item(&help_menu)
                 .build()?;
 

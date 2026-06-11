@@ -1,5 +1,5 @@
 <script>
-  import { app, initOutputDir, clearAll } from '$lib/state.svelte.js';
+  import { app, initOutputDir, clearAll, isTabComplete } from '$lib/state.svelte.js';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
@@ -57,6 +57,29 @@
       <InspectTab />
     {/if}
   </main>
+
+  <div class="nav-buttons">
+    {#if app.activeTab > 0}
+      <button class="nav-btn nav-back" onclick={() => app.activeTab--}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2L4 7l5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back
+      </button>
+    {:else}
+      <div></div>
+    {/if}
+    {#if app.activeTab < 4}
+      <button
+        class="nav-btn nav-continue"
+        disabled={app.activeTab <= 2 && !isTabComplete(app.activeTab)}
+        onclick={() => app.activeTab++}
+      >
+        Continue
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5 2l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    {:else}
+      <div></div>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -101,6 +124,51 @@
     overflow: auto;
   }
 
+  .nav-buttons {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0 0;
+    flex-shrink: 0;
+  }
+
+  .nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 20px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .nav-back {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+  }
+
+  .nav-back:hover:not(:disabled) {
+    background: #e5e7eb;
+  }
+
+  .nav-continue {
+    background: #6366f1;
+    color: #fff;
+  }
+
+  .nav-continue:hover:not(:disabled) {
+    background: #4f46e5;
+  }
+
   @media (prefers-color-scheme: dark) {
     :global(body) {
       color: #f9fafb;
@@ -108,6 +176,14 @@
     }
     .app-title {
       color: #f9fafb;
+    }
+    .nav-back {
+      background: #374151;
+      border-color: #4b5563;
+      color: #d1d5db;
+    }
+    .nav-back:hover:not(:disabled) {
+      background: #4b5563;
     }
   }
 </style>
