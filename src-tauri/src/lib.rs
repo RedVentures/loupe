@@ -1,3 +1,5 @@
+mod mcp;
+
 use axum::{extract::State, http::StatusCode, routing::post, Json, Router};
 use base64::Engine;
 use serde::Deserialize;
@@ -5,11 +7,13 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager};
 use tower_http::cors::CorsLayer;
 
+use mcp::{ComparisonResult, Shared};
+
 // --- HTTP Server (port 7700) ---
 
 #[derive(Clone)]
 struct ServerState {
-    app: AppHandle,
+    shared: Shared,
 }
 
 #[derive(Deserialize)]
@@ -22,9 +26,16 @@ async fn handle_figma(
     State(state): State<ServerState>,
     Json(payload): Json<ImagePayload>,
 ) -> StatusCode {
-    let _ = state.app.emit("figma-image", &payload.image);
+    let _ = state.shared.app.emit("figma-image", &payload.image);
+    {
+        let mut data = state.shared.data.lock().await;
+        data.figma_image = Some(payload.image.clone());
+        if let Some(props) = &payload.properties {
+            data.figma_properties = Some(props.clone());
+        }
+    }
     if let Some(props) = &payload.properties {
-        let _ = state.app.emit("figma-properties", props);
+        let _ = state.shared.app.emit("figma-properties", props);
     }
     StatusCode::OK
 }
@@ -33,9 +44,69 @@ async fn handle_capture(
     State(state): State<ServerState>,
     Json(payload): Json<ImagePayload>,
 ) -> StatusCode {
-    let _ = state.app.emit("web-capture", &payload.image);
+    let _ = state.shared.app.emit("web-capture", &payload.image);
+    {
+        let mut data = state.shared.data.lock().await;
+        data.web_image = Some(payload.image.clone());
+        if let Some(props) = &payload.properties {
+            data.web_properties = Some(props.clone());
+        }
+    }
     if let Some(props) = &payload.properties {
-        let _ = state.app.emit("web-properties", props);
+        let _ = state.shared.app.emit("web-properties", props);
+    }
+    StatusCode::OK
+}
+
+/// Result of a comparison the frontend ran on behalf of an MCP `run_comparison`
+/// call. Correlated back to the waiting tool via `request_id`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ComparisonResultPayload {
+    request_id: u64,
+    similarity: Option<f64>,
+    diff_pixels: Option<u64>,
+    total_pixels: Option<u64>,
+    error: Option<String>,
+}
+
+async fn handle_comparison_result(
+    State(state): State<ServerState>,
+    Json(payload): Json<ComparisonResultPayload>,
+) -> StatusCode {
+    if let Some(tx) = state.shared.pending.lock().await.remove(&payload.request_id) {
+        let result = match payload.error {
+            Some(message) => Err(message),
+            None => Ok(ComparisonResult {
+                similarity: payload.similarity.unwrap_or(0.0),
+                diff_pixels: payload.diff_pixels.unwrap_or(0),
+                total_pixels: payload.total_pixels.unwrap_or(0),
+            }),
+        };
+        let _ = tx.send(result);
+    }
+    StatusCode::OK
+}
+
+/// Signals completion of an agent-driven `capture_web_element` request. The
+/// injected capture script POSTs here after it has finished (or failed).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureResultPayload {
+    request_id: u64,
+    error: Option<String>,
+}
+
+async fn handle_capture_result(
+    State(state): State<ServerState>,
+    Json(payload): Json<CaptureResultPayload>,
+) -> StatusCode {
+    if let Some(tx) = state.shared.captures.lock().await.remove(&payload.request_id) {
+        let result = match payload.error {
+            Some(message) => Err(message),
+            None => Ok(()),
+        };
+        let _ = tx.send(result);
     }
     StatusCode::OK
 }
@@ -50,7 +121,7 @@ async fn handle_resize(
     State(state): State<ServerState>,
     Json(payload): Json<ResizePayload>,
 ) -> StatusCode {
-    if let Some(webview) = state.app.get_webview_window("browse") {
+    if let Some(webview) = state.shared.app.get_webview_window("browse") {
         let _ = webview.set_size(tauri::Size::Logical(tauri::LogicalSize {
             width: payload.width,
             height: payload.height,
@@ -59,13 +130,15 @@ async fn handle_resize(
     StatusCode::OK
 }
 
-fn start_server(app: AppHandle) {
+fn start_server(shared: Shared) {
     tauri::async_runtime::spawn(async move {
-        let state = ServerState { app };
+        let state = ServerState { shared };
         let router = Router::new()
             .route("/figma", post(handle_figma))
             .route("/capture", post(handle_capture))
             .route("/resize", post(handle_resize))
+            .route("/internal/comparison-result", post(handle_comparison_result))
+            .route("/internal/capture-result", post(handle_capture_result))
             .layer(
                 CorsLayer::new()
                     .allow_origin(tower_http::cors::Any)
@@ -523,6 +596,130 @@ fn deactivate_picker_script() -> &'static str {
 "#
 }
 
+/// Build a self-driving capture script for agent-initiated captures. Unlike the
+/// interactive picker, this selects an element by CSS selector and captures it
+/// automatically once it appears, then reports completion to the backend so the
+/// waiting MCP `capture_web_element` call can resolve.
+fn capture_by_selector_script(selector: &str, request_id: u64) -> String {
+    // JSON-encode the selector so it becomes a safe JS string literal (prevents
+    // breaking out of the string / script injection via a crafted selector).
+    let selector_js = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_string());
+
+    let mut script = String::new();
+    script.push_str(MODERN_SCREENSHOT_BUNDLE);
+    script.push('\n');
+
+    let body = r##"
+(function() {
+    if (window.__loupeAutoCapture) return;
+    window.__loupeAutoCapture = true;
+
+    var SELECTOR = __SELECTOR__;
+    var REQUEST_ID = __REQUEST_ID__;
+    var deadline = Date.now() + 15000;
+
+    function post(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+    }
+    function fail(msg) {
+        post('http://localhost:7700/internal/capture-result', { requestId: REQUEST_ID, error: msg }).catch(function(){});
+    }
+    function extractProps(el) {
+        var s = getComputedStyle(el);
+        return {
+            'width': s.width, 'height': s.height,
+            'font-family': s.fontFamily, 'font-size': s.fontSize,
+            'font-weight': s.fontWeight, 'line-height': s.lineHeight,
+            'letter-spacing': s.letterSpacing, 'text-align': s.textAlign,
+            'color': s.color, 'background-color': s.backgroundColor,
+            'opacity': s.opacity,
+            'border-top-width': s.borderTopWidth, 'border-right-width': s.borderRightWidth,
+            'border-bottom-width': s.borderBottomWidth, 'border-left-width': s.borderLeftWidth,
+            'border-top-color': s.borderTopColor, 'border-right-color': s.borderRightColor,
+            'border-bottom-color': s.borderBottomColor, 'border-left-color': s.borderLeftColor,
+            'border-top-left-radius': s.borderTopLeftRadius, 'border-top-right-radius': s.borderTopRightRadius,
+            'border-bottom-right-radius': s.borderBottomRightRadius, 'border-bottom-left-radius': s.borderBottomLeftRadius,
+            'padding-top': s.paddingTop, 'padding-right': s.paddingRight,
+            'padding-bottom': s.paddingBottom, 'padding-left': s.paddingLeft,
+            'gap': s.gap, 'row-gap': s.rowGap, 'column-gap': s.columnGap,
+            'box-shadow': s.boxShadow, 'filter': s.filter
+        };
+    }
+    async function attempt() {
+        var el;
+        try { el = document.querySelector(SELECTOR); }
+        catch (e) { return fail('Invalid selector: ' + e.message); }
+        if (!el) {
+            if (Date.now() > deadline) return fail('Element not found for selector: ' + SELECTOR);
+            return setTimeout(attempt, 250);
+        }
+        try {
+            var dataUrl = await modernScreenshot.domToPng(el, {
+                scale: 2,
+                backgroundColor: null,
+                style: { margin: '0', boxShadow: 'none' },
+                onEmbedNode: function(cloned) {
+                    if (cloned && cloned.style) cloned.style.setProperty('box-shadow', 'none', 'important');
+                    if (cloned && cloned.querySelectorAll) cloned.querySelectorAll('*').forEach(function(x){ if (x.style) x.style.setProperty('box-shadow', 'none', 'important'); });
+                }
+            });
+            await post('http://localhost:7700/capture', { image: dataUrl, properties: extractProps(el) });
+            post('http://localhost:7700/internal/capture-result', { requestId: REQUEST_ID }).catch(function(){});
+        } catch (err) {
+            fail('Capture error: ' + (err && err.message ? err.message : String(err)));
+        }
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') attempt();
+    else window.addEventListener('DOMContentLoaded', attempt);
+})();
+"##;
+
+    let body = body
+        .replace("__SELECTOR__", &selector_js)
+        .replace("__REQUEST_ID__", &request_id.to_string());
+    script.push_str(&body);
+    script
+}
+
+/// Open the browser window at `url` with an auto-capture script that selects
+/// `selector` and captures it. Used by the MCP `capture_web_element` tool.
+pub(crate) fn open_browser_for_capture(
+    app: &AppHandle,
+    url: &str,
+    selector: &str,
+    request_id: u64,
+) -> Result<(), String> {
+    // Restrict to http/https schemes only (matches open_browser).
+    let parsed: url::Url = url.parse().map_err(|e| format!("{e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        scheme => {
+            return Err(format!(
+                "Blocked URL scheme: {scheme}. Only http and https are allowed."
+            ))
+        }
+    }
+
+    if let Some(existing) = app.get_webview_window("browse") {
+        let _ = existing.close();
+    }
+
+    let script = capture_by_selector_script(selector, request_id);
+    tauri::WebviewWindowBuilder::new(app, "browse", tauri::WebviewUrl::External(parsed))
+        .title("Loupe Browser")
+        .inner_size(1200.0, 800.0)
+        .initialization_script(&script)
+        .build()
+        .map_err(|e| format!("{e}"))?;
+
+    Ok(())
+}
+
 // --- Tauri Commands ---
 
 #[tauri::command]
@@ -651,7 +848,9 @@ pub fn run() {
             get_default_output_dir
         ])
         .setup(|app| {
-            start_server(app.handle().clone());
+            let shared = Shared::new(app.handle().clone());
+            start_server(shared.clone());
+            mcp::start_mcp_server(shared);
 
             // --- Menus ---
             let open_output_dir = MenuItemBuilder::with_id("open_output_dir", "Open Output Folder")
