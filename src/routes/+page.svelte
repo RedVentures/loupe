@@ -3,6 +3,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { onMount } from 'svelte';
+  import { runDiff } from '$lib/diff.js';
   import TabNav from '$lib/components/TabNav.svelte';
   import FigmaTab from '$lib/components/FigmaTab.svelte';
   import WebTab from '$lib/components/WebTab.svelte';
@@ -22,6 +23,48 @@
     const unlistenWebProps = listen('web-properties', (event) => {
       app.webProperties = event.payload;
     });
+    // Listen at the root (not only in the tab components) so images pushed by
+    // the plugin/capture intake or the MCP send_image tool populate state even
+    // when the Figma/Web tab isn't currently mounted.
+    const unlistenFigmaImg = listen('figma-image', (event) => {
+      app.figmaImage = event.payload;
+    });
+    const unlistenWebImg = listen('web-capture', (event) => {
+      app.webCapture = event.payload;
+    });
+
+    // Driven by the embedded MCP server's run_comparison tool: run the real
+    // diff here (the comparison logic lives in the frontend) and POST the
+    // result back so the waiting MCP call can resolve.
+    const unlistenMcpRun = listen('mcp-run-comparison', async (event) => {
+      const { requestId, threshold } = event.payload ?? {};
+      const body = { requestId };
+      try {
+        if (!app.figmaImage || !app.webCapture) {
+          throw new Error('Both a Figma frame and a web capture must be loaded');
+        }
+        if (typeof threshold === 'number') app.threshold = threshold;
+        const result = await runDiff(
+          app.figmaImage,
+          app.webCapture,
+          app.threshold,
+          app.figmaCrop,
+          app.webCrop,
+        );
+        app.diffResult = result;
+        app.activeTab = 3;
+        body.similarity = result.similarity;
+        body.diffPixels = result.diffPixels;
+        body.totalPixels = result.totalPixels;
+      } catch (e) {
+        body.error = e?.message || 'Comparison failed';
+      }
+      fetch('http://localhost:7700/internal/comparison-result', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).catch(() => {});
+    });
 
     // Rec #7: Clear in-memory image/design data on window close to minimize persistence
     const handleUnload = () => clearAll();
@@ -33,6 +76,9 @@
       unlistenMenu.then(fn => fn());
       unlistenFigmaProps.then(fn => fn());
       unlistenWebProps.then(fn => fn());
+      unlistenFigmaImg.then(fn => fn());
+      unlistenWebImg.then(fn => fn());
+      unlistenMcpRun.then(fn => fn());
     };
   });
 </script>

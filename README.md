@@ -97,6 +97,31 @@ loupe/
 - **pixelmatch** handles pixel-level image comparison
 - **html2canvas** is injected into the browser window for element capture
 
+## MCP Server
+
+Loupe embeds a [Model Context Protocol](https://modelcontextprotocol.io) server
+so AI agents can drive the running app. It is served over **Streamable HTTP** at
+`http://127.0.0.1:7701/mcp` (the app must be running).
+
+Tools:
+
+- `get_status` — what's loaded (Figma frame, web capture) and the last result
+- `send_image` — push a PNG into the Figma or Web tab
+- `capture_web_element` — open a URL in the integrated browser and auto-capture an element by CSS selector into the Web tab
+- `run_comparison` — run the pixel diff and return similarity %, diff pixels
+- `get_last_comparison` — fetch the most recent result
+- `get_properties` — extracted Figma node props or web computed styles
+
+Example client config (VS Code `.vscode/mcp.json`):
+
+```json
+{
+  "servers": {
+    "loupe": { "type": "http", "url": "http://127.0.0.1:7701/mcp" }
+  }
+}
+```
+
 ## License
 
 MIT
