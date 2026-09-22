@@ -23,6 +23,8 @@ use rmcp::{
     },
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
+// rmcp 2.x renamed `Content` to `ContentBlock`; alias keeps the call sites terse.
+use rmcp::model::ContentBlock as Content;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{oneshot, Mutex};
@@ -326,22 +328,17 @@ impl LoupeMcp {
 #[tool_handler]
 impl ServerHandler for LoupeMcp {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2024_11_05,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation::from_build_env(),
-            instructions: Some(
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_protocol_version(ProtocolVersion::V_2024_11_05)
+            .with_instructions(
                 "Loupe MCP server. Drives the running Loupe desktop app, which \
                  compares Figma frames against live web components. Tools: \
                  get_status, send_image, capture_web_element, run_comparison, \
                  get_last_comparison, get_properties. Load a Figma frame and a \
                  web capture (via the Figma plugin and browser capture, \
                  send_image, or capture_web_element) before calling \
-                 run_comparison."
-                    .to_string(),
-            ),
-            ..Default::default()
-        }
+                 run_comparison.",
+            )
     }
 }
 
